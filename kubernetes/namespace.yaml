@@ -1,0 +1,7 @@
+# All resources for this app live in their own namespace so they're
+# easy to view/delete together (kubectl -n employee-task ...) and don't
+# collide with names from other apps in the same cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: employee-task

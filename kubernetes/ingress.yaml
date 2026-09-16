@@ -1,0 +1,33 @@
+# Requires an ingress controller in the cluster (nginx-ingress locally,
+# or the AWS Load Balancer Controller on EKS -- see kubernetes' README
+# notes in the main project README for the EKS annotations variant).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: employee-task-ingress
+  namespace: employee-task
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000

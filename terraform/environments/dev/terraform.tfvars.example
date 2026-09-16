@@ -1,0 +1,9 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+# NEVER commit the populated terraform.tfvars file.
+
+project_name        = "employee-task-dev"
+aws_region          = "ap-south-1"
+trusted_ssh_cidr    = "203.0.113.5/32" # your real IP, or leave SSH closed and use SSM
+key_pair_name       = ""               # leave blank if only using SSM Session Manager
+db_password         = "REPLACE_ME_WITH_A_REAL_SECRET"
+acm_certificate_arn = ""               # fill in once you've validated a cert in ACM

@@ -1,0 +1,135 @@
+// Jenkins pipeline: test -> build -> push to ECR -> deploy to EC2 -> health check.
+//
+// Configure these as Jenkins credentials / parameters before running:
+//   - AWS_ACCOUNT_ID       (string parameter or credential)
+//   - AWS_REGION           (string parameter, e.g. ap-south-1)
+//   - EC2_DEPLOY_HOST      (string parameter, the app EC2 instance's address)
+//   - ecr-credentials      (AWS credentials with ECR push permission, if not
+//                            using an instance profile on the Jenkins agent)
+//   - ec2-ssh-key          (SSH private key credential used to deploy)
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'AWS_ACCOUNT_ID', defaultValue: '', description: 'AWS account ID that owns the ECR repos')
+        string(name: 'AWS_REGION', defaultValue: 'ap-south-1', description: 'AWS region for ECR/EC2')
+        string(name: 'EC2_DEPLOY_HOST', defaultValue: '', description: 'EC2 host to deploy to via SSH')
+    }
+
+    environment {
+        ECR_REGISTRY   = "${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com"
+        BACKEND_REPO   = "employee-task-backend"
+        FRONTEND_REPO  = "employee-task-frontend"
+        IMAGE_TAG      = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'nogit'}"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Backend: Install & Test') {
+            steps {
+                dir('backend') {
+                    sh '''
+                        python3 -m venv .venv
+                        . .venv/bin/activate
+                        pip install -r requirements.txt
+                        pytest -v
+                    '''
+                }
+            }
+        }
+
+        stage('Frontend: Install & Build') {
+            steps {
+                dir('frontend') {
+                    sh '''
+                        npm install
+                        npm run build
+                    '''
+                }
+            }
+        }
+
+        stage('Docker: Build Images') {
+            steps {
+                sh """
+                    docker build -t ${BACKEND_REPO}:${IMAGE_TAG} ./backend
+                    docker build -t ${FRONTEND_REPO}:${IMAGE_TAG} ./frontend
+                """
+            }
+        }
+
+        stage('Docker: Tag for ECR') {
+            steps {
+                sh """
+                    docker tag ${BACKEND_REPO}:${IMAGE_TAG} ${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG}
+                    docker tag ${BACKEND_REPO}:${IMAGE_TAG} ${ECR_REGISTRY}/${BACKEND_REPO}:latest
+                    docker tag ${FRONTEND_REPO}:${IMAGE_TAG} ${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}
+                    docker tag ${FRONTEND_REPO}:${IMAGE_TAG} ${ECR_REGISTRY}/${FRONTEND_REPO}:latest
+                """
+            }
+        }
+
+        stage('Login to ECR') {
+            steps {
+                sh """
+                    aws ecr get-login-password --region ${params.AWS_REGION} \
+                      | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                """
+            }
+        }
+
+        stage('Push Images') {
+            steps {
+                sh """
+                    docker push ${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG}
+                    docker push ${ECR_REGISTRY}/${BACKEND_REPO}:latest
+                    docker push ${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}
+                    docker push ${ECR_REGISTRY}/${FRONTEND_REPO}:latest
+                """
+            }
+        }
+
+        stage('Deploy to EC2') {
+            steps {
+                sshagent(credentials: ['ec2-ssh-key']) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no ec2-user@${params.EC2_DEPLOY_HOST} '
+                            aws ecr get-login-password --region ${params.AWS_REGION} | \
+                              docker login --username AWS --password-stdin ${ECR_REGISTRY} &&
+                            cd /opt/employee-task-devops &&
+                            export BACKEND_IMAGE=${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG} &&
+                            export FRONTEND_IMAGE=${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG} &&
+                            docker compose pull &&
+                            docker compose up -d
+                        '
+                    """
+                }
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                sh """
+                    sleep 10
+                    curl -f https://${params.EC2_DEPLOY_HOST}/health || \
+                    curl -f http://${params.EC2_DEPLOY_HOST}:8000/health
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployed ${IMAGE_TAG} successfully."
+        }
+        failure {
+            echo "Pipeline failed -- check the stage logs above."
+        }
+    }
+}

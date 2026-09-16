@@ -1,0 +1,54 @@
+# IMAGE_PLACEHOLDER is meant to be substituted by CI/CD (e.g. with `sed`
+# or `envsubst`) with the real ECR image URI + tag before `kubectl apply`,
+# e.g. 123456789012.dkr.ecr.ap-south-1.amazonaws.com/employee-task-backend:42
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: employee-task
+  labels:
+    app: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: BACKEND_IMAGE_PLACEHOLDER
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: employee-task-config
+            - secretRef:
+                name: employee-task-secrets
+          # Liveness: is the process alive? If this fails repeatedly,
+          # Kubernetes restarts the pod.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Readiness: can it serve traffic right now (DB reachable)?
+          # If this fails, the pod is removed from the Service's
+          # endpoints until it passes again -- no restart.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

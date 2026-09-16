@@ -1,0 +1,14 @@
+# Non-secret configuration. Split from Secret so you can see/diff these
+# values in Git and kubectl describe without exposing credentials.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: employee-task-config
+  namespace: employee-task
+data:
+  ENVIRONMENT: "production"
+  CORS_ORIGINS: "https://app.example.com"
+  POSTGRES_DB: "employee_task_db"
+  # Service name + port the backend uses to reach Postgres inside the cluster.
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"

@@ -1,0 +1,15 @@
+# Headless service (clusterIP: None) gives the StatefulSet pod a stable
+# DNS name (postgres-0.postgres.employee-task.svc.cluster.local) instead
+# of a load-balanced virtual IP, which is what a database needs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: employee-task
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

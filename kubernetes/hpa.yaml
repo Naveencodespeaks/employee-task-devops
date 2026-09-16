@@ -1,0 +1,22 @@
+# Requires the metrics-server addon in the cluster to read CPU usage.
+# Scales the backend Deployment between 2 and 6 pods based on average
+# CPU utilization across pods.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: employee-task
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
