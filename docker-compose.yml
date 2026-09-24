@@ -1,35 +1,40 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: employee-task-postgres
+    container_name: employee-postgres
     restart: unless-stopped
 
     environment:
-      POSTGRES_DB: employee_task_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d employee_task_db"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
 
     networks:
-      - employee-task-network
+      - employee-network
 
 
   backend:
-    image: backend-employee-task:latest
-    container_name: employee-task-backend
+    image: ${BACKEND_IMAGE}
+    container_name: employee-backend
     restart: unless-stopped
 
     environment:
-      DATABASE_URL: postgresql+psycopg2://postgres:postgres123@postgres:5432/employee_task_db
-      ENVIRONMENT: docker
+      DATABASE_URL: ${DATABASE_URL}
+      ENVIRONMENT: ${ENVIRONMENT}
+      CORS_ORIGINS: ${CORS_ORIGINS}
 
     depends_on:
       postgres:
@@ -39,12 +44,12 @@ services:
       - "8000:8000"
 
     networks:
-      - employee-task-network
+      - employee-network
 
 
   frontend:
-    image: frontend-employee-task:latest
-    container_name: employee-task-frontend
+    image: ${FRONTEND_IMAGE}
+    container_name: employee-frontend
     restart: unless-stopped
 
     depends_on:
@@ -54,7 +59,7 @@ services:
       - "3000:80"
 
     networks:
-      - employee-task-network
+      - employee-network
 
 
 volumes:
@@ -62,5 +67,5 @@ volumes:
 
 
 networks:
-  employee-task-network:
+  employee-network:
     driver: bridge
