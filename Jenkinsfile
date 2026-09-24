@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout(true)
+    }
+
     environment {
         AWS_REGION     = 'ap-south-2'
         AWS_ACCOUNT_ID = '280710007209'
@@ -13,6 +17,8 @@ pipeline {
         IMAGE_TAG = "v${BUILD_NUMBER}"
 
         DEPLOY_DIR = '/opt/employee-task'
+
+        COMPOSE_PROJECT_NAME = 'employee-task-devops'
     }
 
     stages {
@@ -27,10 +33,13 @@ pipeline {
         stage('Verify Branch') {
             steps {
                 sh '''
+                    set -e
+
                     echo "========================================"
                     echo "Current Git branch:"
                     git branch --show-current
 
+                    echo
                     echo "Latest commit:"
                     git log --oneline -1
 
@@ -187,6 +196,7 @@ pipeline {
                     echo "========================================"
                     echo "Deploying application"
                     echo "Image tag: ${IMAGE_TAG}"
+                    echo "Compose project: ${COMPOSE_PROJECT_NAME}"
                     echo "========================================"
 
                     cd ${DEPLOY_DIR}
@@ -194,25 +204,34 @@ pipeline {
                     export BACKEND_IMAGE=${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG}
                     export FRONTEND_IMAGE=${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}
 
+                    echo
                     echo "Backend image:"
                     echo "${BACKEND_IMAGE}"
 
+                    echo
                     echo "Frontend image:"
                     echo "${FRONTEND_IMAGE}"
 
+                    echo
                     echo "Pulling deployment images..."
 
-                    docker compose pull
+                    docker compose \
+                        -p ${COMPOSE_PROJECT_NAME} \
+                        pull
 
+                    echo
                     echo "Starting containers..."
 
-                    docker compose up \
-                        -d \
-                        --force-recreate
+                    docker compose \
+                        -p ${COMPOSE_PROJECT_NAME} \
+                        up -d --force-recreate
 
+                    echo
                     echo "Container status:"
 
-                    docker compose ps
+                    docker compose \
+                        -p ${COMPOSE_PROJECT_NAME} \
+                        ps
                 '''
             }
         }
@@ -245,7 +264,6 @@ pipeline {
                         echo "Backend not ready yet..."
 
                         sleep 5
-
                     done
 
 
@@ -255,13 +273,19 @@ pipeline {
 
                         cd ${DEPLOY_DIR}
 
+                        echo
                         echo "Container status:"
 
-                        docker compose ps
+                        docker compose \
+                            -p ${COMPOSE_PROJECT_NAME} \
+                            ps
 
+                        echo
                         echo "Backend logs:"
 
-                        docker compose logs \
+                        docker compose \
+                            -p ${COMPOSE_PROJECT_NAME} \
+                            logs \
                             --tail=100 \
                             backend
 
@@ -269,6 +293,7 @@ pipeline {
                     fi
 
 
+                    echo
                     echo "========================================"
                     echo "Backend readiness check"
                     echo "========================================"
@@ -292,7 +317,6 @@ pipeline {
                         echo "Backend not ready yet..."
 
                         sleep 5
-
                     done
 
 
@@ -302,13 +326,19 @@ pipeline {
 
                         cd ${DEPLOY_DIR}
 
+                        echo
                         echo "Container status:"
 
-                        docker compose ps
+                        docker compose \
+                            -p ${COMPOSE_PROJECT_NAME} \
+                            ps
 
+                        echo
                         echo "Backend logs:"
 
-                        docker compose logs \
+                        docker compose \
+                            -p ${COMPOSE_PROJECT_NAME} \
+                            logs \
                             --tail=100 \
                             backend
 
@@ -321,25 +351,38 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 sh '''
+                    set -e
+
                     echo "========================================"
                     echo "Deployment verification"
                     echo "========================================"
 
                     cd ${DEPLOY_DIR}
 
-                    docker compose ps
+                    docker compose \
+                        -p ${COMPOSE_PROJECT_NAME} \
+                        ps
 
                     echo
                     echo "Backend deployed image:"
+
                     docker inspect \
                         employee-backend \
                         --format='{{.Config.Image}}'
 
                     echo
                     echo "Frontend deployed image:"
+
                     docker inspect \
                         employee-frontend \
                         --format='{{.Config.Image}}'
+
+                    echo
+                    echo "PostgreSQL container:"
+
+                    docker inspect \
+                        employee-postgres \
+                        --format='{{.State.Status}}'
                 '''
             }
         }
@@ -347,16 +390,41 @@ pipeline {
         stage('Verify ECR Images') {
             steps {
                 sh '''
+                    set -e
+
                     echo "========================================"
                     echo "Images pushed to ECR"
                     echo "========================================"
 
+                    echo
                     echo "Backend:"
                     echo "${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG}"
 
+                    echo
                     echo "Frontend:"
                     echo "${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}"
 
+                    echo
+                    echo "Checking backend image in ECR..."
+
+                    aws ecr describe-images \
+                        --repository-name ${BACKEND_REPO} \
+                        --image-ids imageTag=${IMAGE_TAG} \
+                        --region ${AWS_REGION} \
+                        --query 'imageDetails[0].imageTags' \
+                        --output text
+
+                    echo
+                    echo "Checking frontend image in ECR..."
+
+                    aws ecr describe-images \
+                        --repository-name ${FRONTEND_REPO} \
+                        --image-ids imageTag=${IMAGE_TAG} \
+                        --region ${AWS_REGION} \
+                        --query 'imageDetails[0].imageTags' \
+                        --output text
+
+                    echo
                     echo "========================================"
                 '''
             }
@@ -380,6 +448,9 @@ pipeline {
 
             echo "Deployment directory:"
             echo "${DEPLOY_DIR}"
+
+            echo "Compose project:"
+            echo "${COMPOSE_PROJECT_NAME}"
 
             echo "========================================="
         }
